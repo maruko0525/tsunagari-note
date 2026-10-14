@@ -220,7 +220,7 @@ window.addEventListener('resize',()=>{if(map)draw()});home();
   const status = document.createElement('p');status.style.cssText='font-size:12px;color:#456b77;line-height:1.6';
   const actions = document.createElement('div');actions.style.cssText='display:flex;flex-wrap:wrap;gap:8px;margin-top:12px';
   const mk = (t,primary=false) => {const b=document.createElement('button');b.type='button';b.textContent=t;if(primary)b.className='primary';return b};
-  const share=mk('📤 TXTを共有',true), copy=mk('📋 文章をコピー'), save=mk('⬇ TXTを保存'), open=mk('ChatGPTを開く'), close=mk('閉じる');
+  const share=mk('📤 TXTを共有'), copy=mk('📋 文章をコピー'), save=mk('⬇ TXTを保存'), open=mk('📋 コピーしてChatGPTアプリへ',true), close=mk('閉じる');
   actions.append(share,copy,save,open,close);
   dlg.append(heading,info,lab,sel,qlab,qbox,plab,preview,status,actions);
   document.body.appendChild(dlg);
@@ -256,7 +256,7 @@ window.addEventListener('resize',()=>{if(map)draw()});home();
     const n=m?.nodes?.find(x=>x.id===readId);
     if(!n)return alert('質問する項目を選んでください。');
     ctx={m,n};sel.value='easy';qbox.value=prompts.easy;automatic=false;update();
-    status.textContent='TXT共有にChatGPTが表示されるか試してください。表示されない場合は「文章をコピー」してChatGPTに貼り付けられます。';
+    status.textContent='おすすめ：『コピーしてChatGPTアプリへ』を押し、この会話に戻って貼り付けてください。アプリが開かない場合はホーム画面からChatGPTを開いてください。';
     dlg.showModal();
   };
   sel.onchange=()=>{qbox.value=prompts[sel.value];automatic=false;update()};
@@ -272,7 +272,19 @@ window.addEventListener('resize',()=>{if(map)draw()});home();
     try{await navigator.share({files:[f],title:'つながりノート：質問'});status.textContent='共有先を開きました。'}
     catch(e){if(e.name!=='AbortError')status.textContent='共有できませんでした。「文章をコピー」を使ってください。'}
   };
-  open.onclick=()=>{window.open('https://chatgpt.com/','_blank','noopener');status.textContent='ChatGPTを開きました。質問文をコピーして貼り付けてください。'};
+  // Web版のゲスト画面へ飛ばさず、コピー後にアプリへの切り替えを試みる。
+  // chatgpt:// は端末・アプリ版によって動かない場合があるため、手動で開く案内も残す。
+  open.onclick=async()=>{
+    if(!preview.value.trim()){status.textContent='質問文を入力してください。';return;}
+    let copied=false;
+    try{await navigator.clipboard.writeText(preview.value);copied=true;}
+    catch(e){preview.focus();preview.select();status.textContent='自動コピーできませんでした。選択中の文章をコピーしてからChatGPTアプリを開いてください。';return;}
+    if(copied){
+      status.textContent='質問文をコピーしました。ChatGPTアプリが開いたら、この会話を選んで貼り付けてください。開かない場合はホーム画面からアプリを起動してください。';
+      // ブラウザへは移動しない。iOSがカスタムURLスキームを処理できればアプリが開く。
+      window.location.href='chatgpt://';
+    }
+  };
   close.onclick=()=>dlg.close();
 })();
 
