@@ -180,5 +180,101 @@ window.addEventListener('resize',()=>{if(map)draw()});home();
   });
 })();
 
+
+/* つながりノート：テキスト質問共有 v1.1（既存機能を変更しない） */
+(() => {
+  'use strict';
+  const tools = document.getElementById('readTools');
+  if (!tools) return;
+  tools.style.flexWrap = 'wrap';
+  const btn = document.createElement('button');
+  btn.id = 'askAIText';
+  btn.type = 'button';
+  btn.textContent = '📝 AIに質問（文章）';
+  btn.style.cssText = 'background:#206c66;color:#fff;border-color:#206c66;font-weight:700;flex:1 1 160px';
+  tools.appendChild(btn);
+
+  const dlg = document.createElement('dialog');
+  dlg.id = 'aiTextDialog';
+  dlg.style.cssText = 'width:min(540px,94vw);max-height:85dvh;overflow:auto';
+  const heading = document.createElement('h3');
+  heading.textContent = '📝 AIへの質問を作る';
+  const info = document.createElement('p');
+  info.style.cssText = 'font-size:13px;line-height:1.6;color:#526b78';
+  info.textContent = '質問の目的を選ぶと、マップのメモと関連項目を含む文章を作成します。内容は自由に修正できます。';
+  const lab = document.createElement('label'); lab.textContent = '質問の目的';
+  const sel = document.createElement('select');
+  const options = [
+    ['easy','📖 わかりやすく説明して'],
+    ['why','💡 なぜそうなるの？'],
+    ['example','🌍 身近な例で説明して'],
+    ['quiz','🧩 理解度を確認したい'],
+    ['deep','🔎 もう少し詳しく知りたい'],
+    ['free','✍️ 自由に質問する']
+  ];
+  options.forEach(([v,t]) => {const o=document.createElement('option');o.value=v;o.textContent=t;sel.appendChild(o)});
+  const qlab = document.createElement('label');qlab.textContent = '質問文（編集できます）';
+  const qbox = document.createElement('textarea');qbox.style.cssText='min-height:105px';
+  const plab = document.createElement('label');plab.textContent='ChatGPTに渡す文章のプレビュー（編集できます）';
+  const preview = document.createElement('textarea');preview.style.cssText='min-height:230px;font-size:13px;line-height:1.55';
+  const status = document.createElement('p');status.style.cssText='font-size:12px;color:#456b77;line-height:1.6';
+  const actions = document.createElement('div');actions.style.cssText='display:flex;flex-wrap:wrap;gap:8px;margin-top:12px';
+  const mk = (t,primary=false) => {const b=document.createElement('button');b.type='button';b.textContent=t;if(primary)b.className='primary';return b};
+  const share=mk('📤 TXTを共有',true), copy=mk('📋 文章をコピー'), save=mk('⬇ TXTを保存'), open=mk('ChatGPTを開く'), close=mk('閉じる');
+  actions.append(share,copy,save,open,close);
+  dlg.append(heading,info,lab,sel,qlab,qbox,plab,preview,status,actions);
+  document.body.appendChild(dlg);
+
+  let ctx=null, automatic=false;
+  const prompts={
+    easy:'この項目について、初めて学ぶ人にもわかるように、順序立てて説明してください。難しい言葉はかみくだいてください。',
+    why:'この項目はなぜそうなるのですか？原因・仕組み・結果を区別して説明してください。',
+    example:'この項目を、身近な生活の例や具体例を使って説明してください。',
+    quiz:'この項目の理解を確かめる基本問題を1問ずつ出してください。私の回答を待ってから解説してください。',
+    deep:'この項目について、基本から一段深い内容まで、関連する概念とのつながりを含めて説明してください。',
+    free:''
+  };
+  const build=()=>{
+    if(!ctx)return '';
+    const {m,n}=ctx;
+    const related=(m.edges||[]).filter(e=>e.from===n.id||e.to===n.id).map(e=>{
+      const id=e.from===n.id?e.to:e.from;
+      const other=m.nodes.find(v=>v.id===id);
+      return other?'・'+other.title+(e.label?'（'+e.label+'）':''):null;
+    }).filter(Boolean);
+    return ['【つながりノート：AIへの質問】','マップ：'+m.name,'項目：'+n.title,
+      n.kind?'種類：'+n.kind:'',n.date?'日付：'+n.date:'',
+      '','【学習メモ】',n.note||'（メモなし）',
+      ...(related.length?['','【関連項目】',...related]:[]),
+      ...(n.url?['','【参考URL】',n.url]:[]),
+      ...(n.photo?['','【添付画像】','元の項目には画像が登録されています。画像自体はこのテキストに含まれません。']:[]),
+      '','【質問】',qbox.value.trim()||'この内容を説明してください。'].filter(Boolean).join('\n');
+  };
+  const update=()=>{if(!automatic)preview.value=build()};
+  btn.onclick=()=>{
+    const m=typeof map!=='undefined'?map:null;
+    const n=m?.nodes?.find(x=>x.id===readId);
+    if(!n)return alert('質問する項目を選んでください。');
+    ctx={m,n};sel.value='easy';qbox.value=prompts.easy;automatic=false;update();
+    status.textContent='TXT共有にChatGPTが表示されるか試してください。表示されない場合は「文章をコピー」してChatGPTに貼り付けられます。';
+    dlg.showModal();
+  };
+  sel.onchange=()=>{qbox.value=prompts[sel.value];automatic=false;update()};
+  qbox.oninput=()=>{automatic=false;update()};
+  preview.oninput=()=>{automatic=true};
+  const file=()=>new File([new Blob([preview.value],{type:'text/plain;charset=utf-8'})], 'つながりノート_質問.txt',{type:'text/plain'});
+  const download=()=>{const url=URL.createObjectURL(file());const a=document.createElement('a');a.href=url;a.download='つながりノート_質問.txt';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000)};
+  save.onclick=()=>{download();status.textContent='テキストファイルを保存しました。'};
+  copy.onclick=async()=>{try{await navigator.clipboard.writeText(preview.value);status.textContent='文章をコピーしました。ChatGPTの入力欄に貼り付けてください。'}catch(e){preview.focus();preview.select();status.textContent='自動コピーできませんでした。選択した文章を手動でコピーしてください。'}};
+  share.onclick=async()=>{
+    const f=file();
+    if(!navigator.share|| (navigator.canShare&&!navigator.canShare({files:[f]}))){status.textContent='このブラウザではTXTファイル共有ができません。「文章をコピー」を使ってください。';return}
+    try{await navigator.share({files:[f],title:'つながりノート：質問'});status.textContent='共有先を開きました。'}
+    catch(e){if(e.name!=='AbortError')status.textContent='共有できませんでした。「文章をコピー」を使ってください。'}
+  };
+  open.onclick=()=>{window.open('https://chatgpt.com/','_blank','noopener');status.textContent='ChatGPTを開きました。質問文をコピーして貼り付けてください。'};
+  close.onclick=()=>dlg.close();
+})();
+
 </script>
 </html>
