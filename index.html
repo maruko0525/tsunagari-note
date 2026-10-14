@@ -386,4 +386,47 @@ $('print').onclick=async()=>{
  await Promise.all([...doc.images].map(im=>im.complete?Promise.resolve():new Promise(resolve=>{im.onload=resolve;im.onerror=resolve;setTimeout(resolve,3000);})));if(doc.fonts?.ready)await doc.fonts.ready;setTimeout(()=>{if(!win.closed)win.print();},300);
 };
 </script>
+<script>
+/* A3 map PDF and unchanged A4 notes: paper orientation is selected by geometry. */
+function a3Tiles(bounds,orientation){
+ const portrait=orientation==='portrait',mmW=portrait?277:400,mmH=portrait?370:250;
+ const w=mmW*96/25.4,h=mmH*96/25.4;
+ const positions=(min,size,span,overlap)=>{if(size<=span)return [min-(span-size)/2];const count=Math.ceil((size-span)/(span-overlap))+1,step=(size-span)/(count-1);return Array.from({length:count},(_,i)=>min+i*step);};
+ const xs=positions(bounds.x,bounds.w,w,180),ys=positions(bounds.y,bounds.h,h,120);
+ const tiles=ys.flatMap((y,row)=>xs.map((x,col)=>({x,y,w,h,row:row+1,col:col+1,rows:ys.length,cols:xs.length})));
+ return {orientation,mmW,mmH,w,h,tiles,fit:Math.min(w/bounds.w,h/bounds.h)};
+}
+function chooseA3(bounds){const p=a3Tiles(bounds,'portrait'),l=a3Tiles(bounds,'landscape');return p.tiles.length!==l.tiles.length?(p.tiles.length<l.tiles.length?p:l):(p.fit>=l.fit?p:l);}
+const a3Dialog=document.createElement('dialog');a3Dialog.style.cssText='width:min(460px,94vw);max-height:85dvh;overflow:auto';
+const a3Heading=document.createElement('h3');a3Heading.textContent='PDF出力';
+const a3Info=document.createElement('p');a3Info.style.cssText='font-size:13px;line-height:1.7';
+const a3Select=document.createElement('select');[['auto','向きを自動で選ぶ'],['portrait','A3縦'],['landscape','A3横']].forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;a3Select.append(o);});
+const a3Count=document.createElement('p');a3Count.style.cssText='font-size:13px;line-height:1.7';
+const a3Actions=document.createElement('div');a3Actions.className='actions';a3Actions.style.flexWrap='wrap';
+const a3MapButton=document.createElement('button');a3MapButton.textContent='A3マップを出力';a3MapButton.className='primary';
+const a4TextButton=document.createElement('button');a4TextButton.textContent='A4文章を出力';
+const a3Close=document.createElement('button');a3Close.textContent='閉じる';a3Close.onclick=()=>a3Dialog.close();
+a3Actions.append(a3MapButton,a4TextButton,a3Close);a3Dialog.append(a3Heading,a3Info,a3Select,a3Count,a3Actions);document.body.append(a3Dialog);
+let a3Snapshot=null;
+function selectedA3(){const b=printMapBounds(a3Snapshot.nodes);return a3Select.value==='auto'?chooseA3(b):a3Tiles(b,a3Select.value);}
+function updateA3Info(){const b=printMapBounds(a3Snapshot.nodes),p=a3Tiles(b,'portrait'),l=a3Tiles(b,'landscape'),chosen=selectedA3();a3Count.textContent='縦なら拡大図'+p.tiles.length+'ページ／横なら'+l.tiles.length+'ページ。選択：A3'+(chosen.orientation==='portrait'?'縦':'横')+'（全体図1＋拡大図'+chosen.tiles.length+'ページ）。';}
+a3Select.onchange=updateA3Info;
+$('print').onclick=()=>{if(!map)return;a3Snapshot=clone(map);a3Select.value='auto';a3Info.textContent='マップはA3、文章はA4で別々に保存します。自動は、同じ拡大率でページ数が少ない向きを選び、同数なら全体図を大きく載せられる向きを選びます。';updateA3Info();a3Dialog.showModal();};
+function pdfWindow(name,paper){const win=window.open('','_blank');if(!win){alert('ポップアップを許可してください');return null;}const doc=win.document;doc.title=name;const style=doc.createElement('style');style.textContent='@page{size:'+paper+';margin:10mm}body{margin:0;color:#263e43;font-family:-apple-system,BlinkMacSystemFont,sans-serif}.controls{padding:12px;background:#eaf2f7}.controls button{padding:10px;font-size:16px}.map-page{box-sizing:border-box;break-after:page;page-break-after:always;overflow:hidden}.map-page:last-child{break-after:auto;page-break-after:auto}.map-page h2{font-size:14px;line-height:1.4;margin:0 0 3mm;overflow-wrap:anywhere}.legend{font-size:11px;margin:0 0 3mm;color:#4d6978}.map-page svg{display:block;background:white}.map-page .node rect{stroke:#a5bbb1;stroke-width:1.5}.map-page svg text{font-family:-apple-system,BlinkMacSystemFont,sans-serif}@media screen{body{background:#e7edf1}.map-page{background:white;margin:16px auto;box-shadow:0 4px 20px #0002}.notes{background:white;max-width:850px;padding:20px;margin:16px auto}}@media print{.controls{display:none}.notes{padding:0;margin:0}}';doc.head.append(style);const controls=doc.createElement('div');controls.className='controls';const btn=doc.createElement('button');btn.textContent='印刷・PDF保存';btn.onclick=()=>win.print();const tip=doc.createElement('p');tip.textContent='用紙設定：'+paper+'。印刷画面が開かない場合はボタンを押してください。印刷プレビューで用紙サイズも確認してください。';controls.append(btn,tip);doc.body.append(controls);return win;}
+async function printWhenReady(win){await Promise.all([...win.document.images].map(im=>im.complete?Promise.resolve():new Promise(resolve=>{im.onload=resolve;im.onerror=resolve;setTimeout(resolve,3000);})));if(win.document.fonts?.ready)await win.document.fonts.ready;setTimeout(()=>{if(!win.closed)win.print();},300);}
+a3MapButton.onclick=()=>{
+ if(!a3Snapshot)return;const layout=selectedA3(),snapshot=a3Snapshot;
+ const win=pdfWindow(snapshot.name+'｜A3マップ','A3 '+layout.orientation);if(!win)return;const doc=win.document;
+ const template=$('canvas').cloneNode(true);template.style.cssText='';template.removeAttribute('id');template.querySelector('#world').removeAttribute('transform');template.querySelectorAll('.selected').forEach(g=>g.classList.remove('selected'));
+ template.querySelectorAll('.node').forEach(g=>{const n=snapshot.nodes.find(n=>n.id===g.getAttribute('data-id'));if(!n)return;g.querySelectorAll('text').forEach(t=>t.remove());const chars=Array.from(n.title),chunks=[];for(let i=0;i<chars.length;i+=12)chunks.push(chars.slice(i,i+12).join(''));const size=Math.min(12,40/Math.max(1,chunks.length));chunks.forEach((line,i)=>g.append(svg('text',{'text-anchor':'middle',y:(i-(chunks.length-1)/2)*size+size*.35,'font-size':size,fill:'#263e43'},line)));});
+ const page=(bounds,title,legend,index)=>{const section=doc.createElement('section');section.className='map-page';section.style.width=layout.mmW+'mm';section.style.height=(layout.orientation==='portrait'?400:277)+'mm';const heading=doc.createElement('h2');heading.textContent=title;const p=doc.createElement('p');p.className='legend';p.textContent=legend;const c=template.cloneNode(true);c.style.width=layout.mmW+'mm';c.style.height=layout.mmH+'mm';c.querySelectorAll('[id]').forEach(el=>{const old=el.id;el.id=old+'-a3-'+index;c.querySelectorAll('[marker-end]').forEach(line=>{if(line.getAttribute('marker-end')==='url(#'+old+')')line.setAttribute('marker-end','url(#'+el.id+')');});});c.setAttribute('viewBox',[bounds.x,bounds.y,bounds.w,bounds.h].join(' '));c.setAttribute('preserveAspectRatio','xMidYMid meet');section.append(heading,p,c);doc.body.append(section);};
+ page(printMapBounds(snapshot.nodes),snapshot.name+'｜全体図','配置を確認する全体図。続く拡大図は元の配置・線を維持しています。',0);
+ layout.tiles.forEach((t,i)=>page(t,snapshot.name+'｜拡大図 '+(i+1)+' / '+layout.tiles.length,'上から'+t.row+'行目・左から'+t.col+'列目（全'+t.rows+'行×'+t.cols+'列）。隣接ページには重なりがあります。',i+1));printWhenReady(win);
+};
+a4TextButton.onclick=()=>{if(!a3Snapshot)return;const win=pdfWindow(a3Snapshot.name+'｜A4文章','A4 portrait');if(!win)return;const doc=win.document,notes=doc.createElement('div');notes.className='notes';doc.body.append(notes);const title=doc.createElement('h1');title.textContent=a3Snapshot.name;notes.append(title);
+ // Preserve existing note content, order, line breaks and image sizing.
+ a3Snapshot.nodes.forEach(n=>{let h=doc.createElement('h3'),p=doc.createElement('p');h.textContent=n.title;p.textContent=[n.date,n.note,n.url].filter(Boolean).join('\n');p.style.whiteSpace='pre-wrap';notes.append(h,p);if(n.photo){let im=doc.createElement('img');im.src=n.photo;im.style.maxWidth='200px';notes.append(im)}});printWhenReady(win);
+};
+
+</script>
 </html>
