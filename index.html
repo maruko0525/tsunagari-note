@@ -353,4 +353,37 @@ window.addEventListener('resize',()=>{if(map)draw()});home();
 })();
 
 </script>
+<script>
+function printMapBounds(nodes){
+ if(!nodes.length)return {x:-100,y:-60,w:200,h:120};
+ const xs=nodes.map(n=>n.x),ys=nodes.map(n=>n.y),x=Math.min(...xs)-100,y=Math.min(...ys)-60;
+ return {x,y,w:Math.max(...xs)-x+100,h:Math.max(...ys)-y+60};
+}
+function printMapTiles(bounds){
+ const positions=(min,size,span,overlap)=>{if(size<=span)return [min-(span-size)/2];const count=Math.ceil((size-span)/(span-overlap))+1,step=(size-span)/(count-1);return Array.from({length:count},(_,i)=>min+i*step);};
+ const xs=positions(bounds.x,bounds.w,680,180),ys=positions(bounds.y,bounds.h,850,120);
+ return ys.flatMap((y,row)=>xs.map((x,col)=>({x,y,w:680,h:850,row:row+1,col:col+1,rows:ys.length,cols:xs.length})));
+}
+$('print').onclick=async()=>{
+ if(!map)return;
+ const tiles=printMapTiles(printMapBounds(map.nodes));
+ if(!confirm('全体図1ページ＋拡大図'+tiles.length+'ページ＋現在と同じ文章部分を出力します。\n配置・線は変えません。実行しますか？'))return;
+ const win=window.open('','_blank');if(!win)return alert('ポップアップを許可してください');
+ const doc=win.document;doc.title=map.name;
+ const style=doc.createElement('style');
+ style.textContent='@page{size:A4 portrait;margin:10mm}body{margin:0;color:#263e43;font-family:-apple-system,BlinkMacSystemFont,sans-serif}.map-page{width:190mm;height:274mm;box-sizing:border-box;break-after:page;page-break-after:always;overflow:hidden}.map-page h2{margin:0 0 3mm;font-size:14px;line-height:1.5;overflow-wrap:anywhere}.legend{font-size:11px;color:#4d6978;margin:0 0 3mm}.map-page svg{display:block;width:190mm;height:237.5mm;background:white}.map-page svg text{font-family:-apple-system,BlinkMacSystemFont,sans-serif}.map-page .node rect{stroke:#a5bbb1;stroke-width:1.5}.print-controls{padding:12px;background:#edf4f8;margin-bottom:12px}.print-controls button{font-size:16px;padding:9px 14px}@media screen{body{background:#e7edf1}.map-page{background:white;margin:16px auto;box-shadow:0 4px 20px #0002}.notes{max-width:850px;background:white;margin:16px auto;padding:20px}}@media print{.print-controls{display:none}.notes{margin:0;padding:0}}';
+ doc.head.append(style);
+ const controls=doc.createElement('div');controls.className='print-controls';const button=doc.createElement('button');button.textContent='印刷・PDF保存';button.onclick=()=>win.print();const info=doc.createElement('p');info.textContent='全体図の後に拡大図が続きます。図はベクター形式です。自動で印刷画面が開かない場合はこのボタンを押してください。';controls.append(button,info);doc.body.append(controls);
+ const template=$('canvas').cloneNode(true);template.style.cssText='';template.removeAttribute('id');template.querySelector('#world').removeAttribute('transform');template.querySelectorAll('.selected').forEach(n=>n.classList.remove('selected'));
+ // Modify title labels only in the print copy, never in the original map.
+ template.querySelectorAll('.node').forEach(g=>{const n=map.nodes.find(n=>n.id===g.getAttribute('data-id'));if(!n)return;g.querySelectorAll('text').forEach(t=>t.remove());const chars=Array.from(n.title),chunks=[];for(let i=0;i<chars.length;i+=12)chunks.push(chars.slice(i,i+12).join(''));const size=Math.min(12,40/Math.max(1,chunks.length));chunks.forEach((line,i)=>g.append(svg('text',{'text-anchor':'middle',y:(i-(chunks.length-1)/2)*size+size*.35,'font-size':size,fill:'#263e43'},line)));});
+ const appendPage=(bounds,title,legend,index)=>{const section=doc.createElement('section');section.className='map-page';const h=doc.createElement('h2');h.textContent=title;const p=doc.createElement('p');p.className='legend';p.textContent=legend;const c=template.cloneNode(true);c.querySelectorAll('[id]').forEach(el=>{const old=el.id;el.id=old+'-print-'+index;c.querySelectorAll('[marker-end]').forEach(line=>{if(line.getAttribute('marker-end')==='url(#'+old+')')line.setAttribute('marker-end','url(#'+el.id+')');});});c.setAttribute('viewBox',[bounds.x,bounds.y,bounds.w,bounds.h].join(' '));c.setAttribute('preserveAspectRatio','xMidYMid meet');section.append(h,p,c);doc.body.append(section);};
+ appendPage(printMapBounds(map.nodes),map.name+'｜全体図','位置関係を確認するページ。文字は次の拡大図で読めます。',0);
+ tiles.forEach((tile,i)=>appendPage(tile,map.name+'｜拡大図 '+(i+1)+' / '+tiles.length,'上から'+tile.row+'行目・左から'+tile.col+'列目（全'+tile.rows+'行×'+tile.cols+'列）。隣のページと重なる範囲があります。',i+1));
+ const notes=doc.createElement('div');notes.className='notes';doc.body.append(notes);
+ // Same note content, ordering, images and sizing as the existing output.
+ map.nodes.forEach(n=>{let h=doc.createElement('h3'),p=doc.createElement('p');h.textContent=n.title;p.textContent=[n.date,n.note,n.url].filter(Boolean).join('\n');p.style.whiteSpace='pre-wrap';notes.append(h,p);if(n.photo){let im=doc.createElement('img');im.src=n.photo;im.style.maxWidth='200px';notes.append(im)}});
+ await Promise.all([...doc.images].map(im=>im.complete?Promise.resolve():new Promise(resolve=>{im.onload=resolve;im.onerror=resolve;setTimeout(resolve,3000);})));if(doc.fonts?.ready)await doc.fonts.ready;setTimeout(()=>{if(!win.closed)win.print();},300);
+};
+</script>
 </html>
