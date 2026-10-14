@@ -14,9 +14,9 @@ const presets=[['構造・仕組み','全体と要素、その役割を記録','
 function persist(){try{localStorage.setItem('tsunagari-v1',JSON.stringify(db));$('status').textContent='端末に保存済み'}catch{$('status').textContent='保存失敗：保存書出で退避してください';alert('端末への保存に失敗しました。保存書出でバックアップしてください。')}}
 function checkpoint(){history.push(clone(map));if(history.length>60)history.shift();future=[]}
 function commit(){map.updated=Date.now();persist();draw()}
-function home(){hideRead();map=null;$('home').style.display='block';$('editor').style.display='none';$('back').hidden=true;$('status').textContent='自分の考えを、自分の配置で。';$('maps').replaceChildren();db.maps.forEach(m=>{let d=document.createElement('div');d.className='mapcard';let b=document.createElement('button');b.textContent=m.name+'　'+m.nodes.length+'項目';b.onclick=()=>openMap(m);let del=document.createElement('button');del.textContent='削除';del.onclick=()=>{if(confirm('このマップを削除しますか？バックアップは保存書出から作れます。')){db.maps=db.maps.filter(x=>x.id!==m.id);persist();home()}};d.append(b,del);$('maps').append(d)})}
+function home(){hideRead();map=null;syncBackupLabels();$('home').style.display='block';$('editor').style.display='none';$('back').hidden=true;$('status').textContent='自分の考えを、自分の配置で。';$('maps').replaceChildren();db.maps.forEach(m=>{let d=document.createElement('div');d.className='mapcard';let b=document.createElement('button');b.textContent=m.name+'　'+m.nodes.length+'項目';b.onclick=()=>openMap(m);let del=document.createElement('button');del.textContent='削除';del.onclick=()=>{if(confirm('このマップを削除しますか？バックアップは保存書出から作れます。')){db.maps=db.maps.filter(x=>x.id!==m.id);persist();home()}};d.append(b,del);$('maps').append(d)})}
 presets.forEach((p,i)=>{let b=document.createElement('button');b.className='card';let title=document.createElement('b');title.textContent=p[0];let desc=document.createElement('p');desc.textContent=p[1];b.append(title,desc);b.onclick=()=>{let name=prompt('マップの名前',p[0]);if(!name)return;let ns=p.slice(2).map((t,j)=>({id:uid(),title:t,note:j===0?'名前や内容を編集して、自分の記録に変えてください。':'',kind:'項目',url:'',date:'',color:j===0?'#d1ede2':'#ffffff',x:[0,-190,190,0][j],y:[0,150,150,300][j]}));let m={id:uid(),name,nodes:ns,edges:ns.slice(1).map(n=>({id:uid(),from:ns[0].id,to:n.id,label:'',directed:false})),updated:Date.now()};db.maps.push(m);persist();openMap(m)};$('templates').append(b)});
-function openMap(m){hideRead();map=m;selected=null;history=[];future=[];linkStart=null;timeline=false;$('home').style.display='none';$('editor').style.display='block';$('back').hidden=false;$('timeline').style.display='none';$('canvas').style.display='block';$('hint').style.display='block';$('time').textContent='時系列';$('status').textContent='端末に保存済み';requestAnimationFrame(fit)}
+function openMap(m){hideRead();map=m;syncBackupLabels();selected=null;history=[];future=[];linkStart=null;timeline=false;$('home').style.display='none';$('editor').style.display='block';$('back').hidden=false;$('timeline').style.display='none';$('canvas').style.display='block';$('hint').style.display='block';$('time').textContent='時系列';$('status').textContent='端末に保存済み';requestAnimationFrame(fit)}
 function svg(tag,attrs={},txt){let e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(let k in attrs)e.setAttribute(k,attrs[k]);if(txt!==undefined)e.textContent=txt;return e}
 function draw(){if(!map)return;let w=$('world');w.replaceChildren();w.setAttribute('transform',`translate(${view.x} ${view.y}) scale(${view.s})`);map.edges.forEach(e=>{let a=map.nodes.find(n=>n.id===e.from),b=map.nodes.find(n=>n.id===e.to);if(!a||!b)return;let g=svg('g',{class:'edge'}),attrs={x1:a.x,y1:a.y,x2:b.x,y2:b.y};g.append(svg('line',{...attrs,class:'hit'}),svg('line',{...attrs,stroke:'#8aa89c','stroke-width':2,...(e.directed?{'marker-end':'url(#arrow)'}:{})}));if(e.label){let t=svg('text',{x:(a.x+b.x)/2,y:(a.y+b.y)/2-9,'text-anchor':'middle',fill:'#486b5f','font-size':12,'paint-order':'stroke',stroke:'#f4f6f4','stroke-width':5},e.label);g.append(t)}g.onclick=()=>editEdge(e);w.append(g)});map.nodes.forEach(n=>{let g=svg('g',{class:'node'+(selected===n.id?' selected':''),transform:`translate(${n.x} ${n.y})`,'data-id':n.id});g.append(svg('rect',{x:-76,y:-25,width:152,height:50,rx:12,fill:n.color||'#fff'}));g.append(svg('text',{'text-anchor':'middle',y:n.photo?-1:5,'font-size':14,fill:'#263e43'},n.title.length>11?n.title.slice(0,11)+'…':n.title));if(n.note||n.url||n.date||n.photo)g.append(svg('text',{'text-anchor':'middle',y:19,'font-size':9,fill:'#62786e'},[n.note?'メモ':'',n.url?'URL':'',n.date,n.photo?'画像':''].filter(Boolean).join(' · ')));g.ondblclick=()=>editNode(n);w.append(g)});$('undo').disabled=!history.length;$('redo').disabled=!future.length;if(timeline)renderTimeline();refreshRead()}
 function fit(){let c=$('canvas');let ns=map.nodes;if(!ns.length){view={x:c.clientWidth/2,y:c.clientHeight/2,s:1};draw();return}let xs=ns.map(n=>n.x),ys=ns.map(n=>n.y),minX=Math.min(...xs)-100,maxX=Math.max(...xs)+100,minY=Math.min(...ys)-70,maxY=Math.max(...ys)+70;let s=Math.min(1.2,(c.clientWidth-30)/(maxX-minX),(c.clientHeight-80)/(maxY-minY));view={s,x:c.clientWidth/2-(minX+maxX)/2*s,y:c.clientHeight/2-(minY+maxY)/2*s};draw()}
@@ -36,7 +36,71 @@ function zoom(f){let c=$('canvas'),s=Math.max(.2,Math.min(3,view.s*f)),cx=c.clie
 $('search').onclick=()=>{$('query').value='';$('results').replaceChildren();$('searchDialog').showModal()};$('query').oninput=()=>{$('results').replaceChildren();let q=$('query').value.trim().toLowerCase();if(!q)return;map.nodes.filter(n=>[n.title,n.note,n.kind,n.url].join(' ').toLowerCase().includes(q)).forEach(n=>{let b=document.createElement('button');b.textContent=n.title;b.onclick=()=>{if(timeline)$('time').click();selected=n.id;view.x=$('canvas').clientWidth/2-n.x*view.s;view.y=$('canvas').clientHeight/2-n.y*view.s;draw();showRead(n);$('searchDialog').close()};$('results').append(b)})};
 function renderTimeline(){let t=$('timeline');t.replaceChildren();let intro=document.createElement('p');intro.textContent='自分で登録した日付順に表示。マップの位置やつながりは変わりません。';t.append(intro);let dated=map.nodes.filter(n=>n.date).slice().sort((a,b)=>a.date.localeCompare(b.date));let undated=map.nodes.filter(n=>!n.date);[...dated,...undated].forEach(n=>{let d=document.createElement('div');d.className='event';let s=document.createElement('small');s.textContent=n.date||'日付なし';let h=document.createElement('h3');h.textContent=n.title;let p=document.createElement('p');p.textContent=n.note;d.append(s,h,p);d.onclick=()=>{selected=n.id;showRead(n);};t.append(d)})}
 $('time').onclick=()=>{timeline=!timeline;$('canvas').style.display=timeline?'none':'block';$('timeline').style.display=timeline?'block':'none';$('hint').style.display=timeline?'none':'block';$('time').textContent=timeline?'マップへ':'時系列';draw()};
-function download(blob,name){let a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),10000)}$('backup').onclick=()=>download(new Blob([JSON.stringify({format:'tsunagari-v1',maps:db.maps},null,2)],{type:'application/json'}),'tsunagari-backup.json');$('restore').onclick=()=>$('import').click();$('import').onchange=async()=>{try{let d=JSON.parse(await $('import').files[0].text());if(d.format!=='tsunagari-v1'||!Array.isArray(d.maps)||!d.maps.every(m=>typeof m.name==='string'&&Array.isArray(m.nodes)&&Array.isArray(m.edges)&&m.nodes.every(n=>typeof n.id==='string'&&typeof n.title==='string'&&Number.isFinite(n.x)&&Number.isFinite(n.y))&&m.edges.every(e=>typeof e.from==='string'&&typeof e.to==='string')))throw Error();if(!confirm('バックアップを追加して復元します。現在の記録は残ります。よろしいですか？'))return;d.maps.forEach(m=>{m.id=uid();m.name+='（復元）';db.maps.push(m)});persist();home()}catch{alert('このバックアップは読み込めません')}finally{$('import').value=''}};
+function download(blob,name){let a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),10000)}
+function syncBackupLabels(){$('backup').textContent=map?'このマップを書出':'全体バックアップ';$('restore').textContent='読み込み';}
+function backupStamp(){const d=new Date(),p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'_'+p(d.getHours())+'-'+p(d.getMinutes())+'-'+p(d.getSeconds());}
+const backupDialog=document.createElement('dialog');backupDialog.id='backupImportDialog';backupDialog.style.cssText='width:min(560px,94vw);max-height:85dvh;overflow:auto';document.body.append(backupDialog);
+let pendingBackup=null;
+function validBackup(d){
+ if(d?.format!=='tsunagari-v1'||!Array.isArray(d.maps)||!d.maps.length)return false;
+ return d.maps.every(m=>{
+  if(!m||typeof m.name!=='string'||!Array.isArray(m.nodes)||!Array.isArray(m.edges))return false;
+  const ids=new Set();
+  for(const n of m.nodes){if(!n||typeof n.id!=='string'||ids.has(n.id)||typeof n.title!=='string'||!Number.isFinite(n.x)||!Number.isFinite(n.y))return false;ids.add(n.id);}
+  return m.edges.every(e=>e&&typeof e.from==='string'&&typeof e.to==='string'&&ids.has(e.from)&&ids.has(e.to));
+ });
+}
+function exportBackup(){const maps=map?[map]:db.maps;const name=map?map.name.replace(/[\\/:*?"<>|]/g,'_').slice(0,70):'全マップ';download(new Blob([JSON.stringify({format:'tsunagari-v1',scope:map?'map':'all',exportedAt:new Date().toISOString(),maps},null,2)],{type:'application/json'}),'つながり_'+name+'_'+backupStamp()+'.json');}
+$('backup').onclick=exportBackup;
+$('restore').onclick=()=>$('import').click();
+function prepareBackupImport(d){
+ pendingBackup=clone(d);backupDialog.replaceChildren();
+ const h=document.createElement('h3');h.textContent='マップを読み込む';
+ const p=document.createElement('p');p.textContent='マップごとに「追加」「置き換え」「読み込まない」を選んでください。初期状態は追加です。名前が同じでも自動統合しません。';p.style.cssText='line-height:1.7;font-size:13px';
+ backupDialog.append(h,p);
+ d.maps.forEach((m,i)=>{
+  const lab=document.createElement('label');lab.textContent=(i+1)+'. '+m.name+'（'+m.nodes.length+'項目）';
+  const sel=document.createElement('select');sel.dataset.importIndex=i;
+  const option=(value,text)=>{const o=document.createElement('option');o.value=value;o.textContent=text;sel.append(o);};
+  option('new','別マップとして追加');option('skip','読み込まない');
+  db.maps.forEach((t,j)=>option('replace:'+j,'置き換え：'+t.name+'（'+t.nodes.length+'項目）'));
+  backupDialog.append(lab,sel);
+ });
+ const warn=document.createElement('p');warn.textContent='置き換えは、選んだマップの内容全体を入れ替えます。他のマップは残ります。実行前に全体バックアップを保存できます。';warn.style.cssText='line-height:1.7;font-size:13px;color:#76543b';backupDialog.append(warn);
+ const actions=document.createElement('div');actions.className='actions';actions.style.flexWrap='wrap';
+ const back=document.createElement('button');back.textContent='実行前の全体を保存';back.onclick=()=>download(new Blob([JSON.stringify({format:'tsunagari-v1',scope:'all',exportedAt:new Date().toISOString(),maps:db.maps},null,2)],{type:'application/json'}),'つながり_全マップ_読み込み前_'+backupStamp()+'.json');
+ const cancel=document.createElement('button');cancel.textContent='取消';cancel.onclick=()=>{pendingBackup=null;backupDialog.close();};
+ const go=document.createElement('button');go.textContent='選んだ方法で読み込む';go.className='primary';go.onclick=applyBackupImport;
+ actions.append(back,cancel,go);backupDialog.append(actions);backupDialog.showModal();
+}
+function planBackupImport(incoming,choices,existing){
+ const next=clone(existing),targets=new Set();let added=0,replaced=0;
+ incoming.forEach((m,i)=>{
+  const mode=choices[i];if(mode==='skip')return;
+  const item=clone(m);
+  if(mode==='new'){item.id=uid();item.name+='（読み込み）';next.push(item);added++;return;}
+  if(!/^replace:\d+$/.test(mode))throw Error('読み込み方法を選んでください。');
+  const index=Number(mode.slice(8));
+  if(!existing[index])throw Error('置き換え先が見つかりません。');
+  if(targets.has(index))throw Error('同じマップに複数の置き換えは指定できません。');
+  targets.add(index);item.id=existing[index].id;item.updated=Date.now();next[index]=item;replaced++;
+ });
+ return {maps:next,added,replaced};
+}
+function applyBackupImport(){
+ if(!pendingBackup)return;
+ try{
+  const choices=[...backupDialog.querySelectorAll('select')].map(s=>s.value);
+  const plan=planBackupImport(pendingBackup.maps,choices,db.maps);
+  if(!plan.added&&!plan.replaced)return alert('読み込むマップを選んでください。');
+  if(!confirm('追加 '+plan.added+'件／置き換え '+plan.replaced+'件で実行します。'+(plan.replaced?'置き換え先の内容は入れ替わります。':'')))return;
+  // Write first. On storage failure, leave current maps unchanged.
+  localStorage.setItem('tsunagari-v1',JSON.stringify({...db,maps:plan.maps}));
+  db.maps=plan.maps;pendingBackup=null;backupDialog.close();home();
+  alert('追加 '+plan.added+'件／置き換え '+plan.replaced+'件が完了しました。');
+ }catch(e){alert('読み込みを実行できませんでした。現在の記録は変更していません。\n'+e.message);}
+}
+$('import').onchange=async()=>{try{const file=$('import').files[0];if(!file)return;const d=JSON.parse(await file.text());if(!validBackup(d))throw Error('対応するマップJSONではないか、項目・線の形式が不正です。');prepareBackupImport(d);}catch(e){alert('このファイルは読み込めません。\n'+e.message);}finally{$('import').value='';}};
 $('print').onclick=()=>{let win=window.open('','_blank');if(!win)return alert('ポップアップを許可してください');let doc=win.document;doc.title=map.name;let h=doc.createElement('h1');h.textContent=map.name;doc.body.append(h);let c=$('canvas').cloneNode(true);c.setAttribute('width','100%');c.setAttribute('height','700');let xs=map.nodes.map(n=>n.x),ys=map.nodes.map(n=>n.y);if(xs.length){let minx=Math.min(...xs)-100,miny=Math.min(...ys)-60;c.setAttribute('viewBox',`${minx} ${miny} ${Math.max(...xs)-minx+100} ${Math.max(...ys)-miny+60}`);c.querySelector('#world').removeAttribute('transform')}c.style.cssText='width:100%;height:700px';doc.body.append(c);map.nodes.forEach(n=>{let h=doc.createElement('h3'),p=doc.createElement('p');h.textContent=n.title;p.textContent=[n.date,n.note,n.url].filter(Boolean).join('\n');p.style.whiteSpace='pre-wrap';doc.body.append(h,p);if(n.photo){let im=doc.createElement('img');im.src=n.photo;im.style.maxWidth='200px';doc.body.append(im)}});setTimeout(()=>win.print(),500)};
 let readId=null;
 function hideRead(){readId=null;$('readPanel').hidden=true;$('readPanel').open=false;}
